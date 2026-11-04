@@ -83,7 +83,7 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
 <body>
 <header><div class="in">
   <h1>DMPL Flight 2 · Match Scheduler</h1>
-  <p>Mark the times your team can play. When you and an opponent overlap, the home team books it.</p>
+  <p>Mark the times your team can play. When you and an opponent overlap, either team can book it.</p>
 </div></header>
 
 <div class="wrap">
@@ -98,7 +98,7 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
 
   <div id="teamArea" hidden>
     <h2>Your matches</h2>
-    <p class="sub">Green = booked. Yellow = times that work for both teams, waiting on the home team to book.</p>
+    <p class="sub">Green = booked. Yellow = times that work for both teams, ready for either team to book.</p>
     <div class="matches" id="matches"></div>
 
     <h2>When can your team play?</h2>
@@ -122,7 +122,7 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
   <ol class="how card">
     <li>Pick your team at the top (this device remembers it).</li>
     <li>Tap the dates and times your team can play. Add any other time that works with “Other time.”</li>
-    <li>When both teams have a time in common, it shows on the match and <b>everyone on both teams gets an email</b>. The <b>home team</b> taps <b>Book</b> and reserves a court.</li>
+    <li>When both teams have a time in common, it shows on the match and <b>everyone on both teams gets an email</b>. <b>Either team</b> taps <b>Book</b>, and the home team reserves a court.</li>
     <li>Once it's booked, both teams get a confirmation email, then a reminder the day before. Need to move a match? Tap <b>Unbook</b> and pick again.</li>
     <li>Still enter scores on Tenniscores as usual.</li>
   </ol>
@@ -257,8 +257,8 @@ function renderMatches(){
       const ov=overlap(m);
       if(ov.length){
         pill=`<span class="pill p-ready">${ov.length} time${ov.length>1?"s":""} work${ov.length>1?"":"s"}</span>`;
-        body = home ? `Both teams can play these. Book one:` : `Both teams can play these. Waiting on ${esc(TEAMS[m.h].n)} (home) to book.`;
-        body += `<div class="chips">`+ov.map(k=>`<span class="chip">${fmt(k)}${home?` <button class="primary" data-book="${m.id}|${k}">Book</button>`:""}</span>`).join("")+`</div>`;
+        body = `Both teams can play these. Either team can book one:`;
+        body += `<div class="chips">`+ov.map(k=>`<span class="chip">${fmt(k)} <button class="primary" data-book="${m.id}|${k}">Book</button></span>`).join("")+`</div>`;
       } else {
         pill=`<span class="pill p-none">No common time yet</span>`;
         const theirs=availOf(opp).filter(future);
