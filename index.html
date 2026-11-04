@@ -67,9 +67,11 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
 .slot.on{background:var(--on);border-color:var(--on);color:var(--onink);font-weight:700}
 .slot.bk{background:var(--okbg);border-color:var(--ok);color:var(--ok);cursor:default}
 .slot[disabled]{opacity:.35;cursor:default}
-.slot .opp{display:block;margin-top:4px;padding-top:4px;border-top:1px dashed var(--line);font-size:.72rem;font-weight:600;color:var(--wait);line-height:1.25;overflow-wrap:anywhere}
-.slot.on .opp{color:var(--onink);border-top-color:color-mix(in srgb,var(--onink) 40%,transparent)}
-.slot.hit{box-shadow:inset 0 0 0 3px var(--ball)}
+.cell{display:grid;gap:4px;border-radius:8px}
+.cell.hit{box-shadow:0 0 0 3px var(--ball)}
+.oppbtn{width:100%;font-size:.75rem;font-weight:700;line-height:1.2;padding:5px 4px;background:var(--waitbg);color:var(--wait);border-color:var(--ball)}
+.oppbtn:hover{filter:brightness(.96)}
+.oppbtn.armed{background:var(--ok);border-color:var(--ok);color:#fff}
 .custom{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
 /* board */
 .board{width:100%;border-collapse:collapse;font-size:.88rem}
@@ -105,7 +107,7 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
     <div class="matches" id="matches"></div>
 
     <h2>When can your team play?</h2>
-    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this. Team names in a slot are opponents you still need to play who can make that time. A yellow outline means you both can, so it shows on that match ready to book.</p>
+    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this. Team names under a slot are opponents you still need to play who can make that time. Tap a team name, then tap again to book that match. Both teams get an email.</p>
     <div class="card gridwrap"><table class="av" id="grid"></table>
       <div class="custom">
         <label for="customDate"><b>Other time that works:</b></label>
@@ -159,6 +161,7 @@ const PLAYED = { "AJ-CHP":"Played 11/01 · Arnaud/Jess won 2–0" };
 const MATCHES = PAIRS.map(([h,a])=>({id:h+"-"+a,h,a}));
 
 let data = {avail:{}, matches:{}};
+let armed = "";   // team button tapped once in the grid, waiting for the confirming tap
 let me = ""; try{ me = localStorage.getItem("dmplTeam")||""; }catch(e){}
 
 const $ = id => document.getElementById(id);
@@ -191,7 +194,8 @@ function overlap(m){
 }
 function state(m){
   if(PLAYED[m.id]) return "played";
-  if(booked()[m.id]) return "booked";
+  const b=booked()[m.id];
+  if(b&&b.when) return dateOf(b.when) < new Date(Date.now()-2*3600e3) ? "played" : "booked";
   return overlap(m).length ? "ready" : "none";
 }
 
@@ -252,7 +256,7 @@ function renderMatches(){
   $("matches").innerHTML = mine.map(m=>{
     const home=m.h===me, opp=home?m.a:m.h, st=state(m), b=booked()[m.id];
     let pill, body="";
-    if(st==="played"){ pill=`<span class="pill p-played">Played</span>`; body=esc(PLAYED[m.id]); }
+    if(st==="played"){ pill=`<span class="pill p-played">Played</span>`; body=PLAYED[m.id]?esc(PLAYED[m.id]):`Played ${fmt(b.when)}. Enter the score on Tenniscores.`; }
     else if(st==="booked"){
       pill=`<span class="pill p-booked">Booked</span>`;
       body=`<b>${fmt(b.when)}</b>${home?" · you host":" · at "+esc(TEAMS[m.h].n)} <button data-unbook="${m.id}">Unbook</button>`;
@@ -287,9 +291,12 @@ function renderGrid(){
       const on=mineAv.has(k);
       // opponents we still need to play who marked this slot (and aren't booked then)
       const opps=d<now?[]:todo.filter(o=>availOf(o).includes(k)&&!bookedFor(o)[k]);
-      const who=opps.length?`<span class="opp">${opps.map(o=>esc(TEAMS[o].n)).join("<br>")}</span>`:"";
       const hit=on&&opps.length;
-      h+=`<td><button class="slot${on?" on":""}${hit?" hit":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ We can play":"—"}${who}</button></td>`;
+      const who=opps.map(o=>{
+        const m=MATCHES.find(x=>(x.h===me&&x.a===o)||(x.a===me&&x.h===o)), key=m.id+"|"+k, armedNow=armed===key;
+        return `<button class="oppbtn${armedNow?" armed":""}" data-pick="${key}" title="Book this match">${armedNow?"Tap again to book<br>":""}${esc(TEAMS[o].n).replace(/\//g,"/<wbr>")}</button>`;
+      }).join("");
+      h+=`<td><div class="cell${hit?" hit":""}"><button class="slot${on?" on":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ We can play":"—"}</button>${who}</div></td>`;
     }
     h+="</tr>";
   }
@@ -306,16 +313,17 @@ function renderBoard(){
   const rows=[...MATCHES].sort((x,y)=>order[state(x)]-order[state(y)] || ((booked()[x.id]||{}).when||"").localeCompare((booked()[y.id]||{}).when||""));
   $("board").innerHTML=`<tr><th>Home</th><th>Away</th><th>Status</th><th>When</th></tr>`+rows.map(m=>{
     const st=state(m), b=booked()[m.id];
-    return `<tr class="${m.h===me||m.a===me?"mine":""}"><td>${esc(TEAMS[m.h].n)}</td><td>${esc(TEAMS[m.a].n)}</td><td><span class="pill p-${st}">${label[st]}</span></td><td>${st==="booked"?dateOf(b.when).toLocaleString("en-US",{month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}):st==="played"?"11/01":""}</td></tr>`;
+    return `<tr class="${m.h===me||m.a===me?"mine":""}"><td>${esc(TEAMS[m.h].n)}</td><td>${esc(TEAMS[m.a].n)}</td><td><span class="pill p-${st}">${label[st]}</span></td><td>${st==="booked"?dateOf(b.when).toLocaleString("en-US",{month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}):st==="played"?(b?dateOf(b.when).toLocaleDateString("en-US",{month:"numeric",day:"numeric"}):"11/01"):""}</td></tr>`;
   }).join("");
 }
 
 // ---------- events ----------
-$("team").addEventListener("change",e=>{ me=e.target.value; try{localStorage.setItem("dmplTeam",me);}catch(x){} render(); });
+$("team").addEventListener("change",e=>{ armed=""; me=e.target.value; try{localStorage.setItem("dmplTeam",me);}catch(x){} render(); });
 document.addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b||b.disabled) return;
   if(b.dataset.slot) toggle(b.dataset.slot, !b.classList.contains("on"));
   else if(b.dataset.book){ const [id,k]=b.dataset.book.split("|"); book(id,k); }
+  else if(b.dataset.pick){ if(armed===b.dataset.pick){ armed=""; const [id,k]=b.dataset.pick.split("|"); book(id,k); } else { armed=b.dataset.pick; render(); } }
   else if(b.dataset.unbook) unbook(b.dataset.unbook);
   else if(b.dataset.add) toggle(b.dataset.add,true);
   else if(b.dataset.del) toggle(b.dataset.del,false);
