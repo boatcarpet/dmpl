@@ -67,6 +67,9 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
 .slot.on{background:var(--on);border-color:var(--on);color:var(--onink);font-weight:700}
 .slot.bk{background:var(--okbg);border-color:var(--ok);color:var(--ok);cursor:default}
 .slot[disabled]{opacity:.35;cursor:default}
+.slot .opp{display:block;margin-top:4px;padding-top:4px;border-top:1px dashed var(--line);font-size:.72rem;font-weight:600;color:var(--wait);line-height:1.25;overflow-wrap:anywhere}
+.slot.on .opp{color:var(--onink);border-top-color:color-mix(in srgb,var(--onink) 40%,transparent)}
+.slot.hit{box-shadow:inset 0 0 0 3px var(--ball)}
 .custom{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
 /* board */
 .board{width:100%;border-collapse:collapse;font-size:.88rem}
@@ -102,7 +105,7 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
     <div class="matches" id="matches"></div>
 
     <h2>When can your team play?</h2>
-    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this.</p>
+    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this. Team names in a slot are opponents you still need to play who can make that time. A yellow outline means you both can, so it shows on that match ready to book.</p>
     <div class="card gridwrap"><table class="av" id="grid"></table>
       <div class="custom">
         <label for="customDate"><b>Other time that works:</b></label>
@@ -273,6 +276,7 @@ function renderMatches(){
 
 function renderGrid(){
   const mineAv=new Set(availOf(me)), bk=bookedFor(me), now=new Date();
+  const todo=MATCHES.filter(m=>(m.h===me||m.a===me)&&!PLAYED[m.id]&&!booked()[m.id]).map(m=>m.h===me?m.a:m.h);
   let h=`<tr><th>Week of</th>${SLOTS.map(s=>`<th>${s.label}</th>`).join("")}</tr>`;
   for(const w of weeks()){
     h+=`<tr><td class="wk">${w.mon.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</td>`;
@@ -281,7 +285,11 @@ function renderGrid(){
       const k=keyOf(d), day=d.toLocaleDateString("en-US",{month:"numeric",day:"numeric"});
       if(bk[k]){ const [hh,aa]=bk[k].split("-"); const opp=hh===me?aa:hh; h+=`<td><button class="slot bk" disabled title="Booked">${day}<br>vs ${esc(TEAMS[opp].n)}</button></td>`; continue; }
       const on=mineAv.has(k);
-      h+=`<td><button class="slot${on?" on":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ Can play":"—"}</button></td>`;
+      // opponents we still need to play who marked this slot (and aren't booked then)
+      const opps=d<now?[]:todo.filter(o=>availOf(o).includes(k)&&!bookedFor(o)[k]);
+      const who=opps.length?`<span class="opp">${opps.map(o=>esc(TEAMS[o].n)).join("<br>")}</span>`:"";
+      const hit=on&&opps.length;
+      h+=`<td><button class="slot${on?" on":""}${hit?" hit":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ We can play":"—"}${who}</button></td>`;
     }
     h+="</tr>";
   }
