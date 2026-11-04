@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flight 2 Match Scheduler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Layout: one column. Pick your team -> your 8 matches -> your available times -> whole-flight board. */
+:root{
+  --bg:#eef1f4; --card:#ffffff; --ink:#18232e; --muted:#5d6b78; --line:#d5dce3;
+  --deck:#1f4d6b;          /* platform-deck blue */
+  --ball:#f2a900;          /* paddle-ball yellow */
+  --ok:#1f7a4d; --okbg:#e3f3ea; --wait:#8a5a00; --waitbg:#fff3d6; --none:#6b7783; --nonebg:#eef1f4;
+  --on:#1f4d6b; --onink:#fff;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Source Sans 3",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f161d; --card:#17212b; --ink:#e6edf3; --muted:#9aa8b5; --line:#2a3743;
+  --deck:#7fb6dc; --ball:#f2b632; --ok:#6fd39c; --okbg:#173326; --wait:#f2c46b; --waitbg:#33290f;
+  --none:#9aa8b5; --nonebg:#1d2833; --on:#7fb6dc; --onink:#0f161d; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body)}
+.wrap{max-width:900px;margin:0 auto;padding:20px 16px 60px}
+header{background:var(--deck);color:#fff;padding:22px 16px 18px}
+@media (prefers-color-scheme:dark){header{color:#0f161d}}
+header .in{max-width:900px;margin:0 auto}
+h1{font:700 2.1rem/1 var(--display);letter-spacing:.01em;margin:0 0 6px;text-wrap:balance}
+header p{margin:0;opacity:.9}
+h2{font:700 1.45rem/1.1 var(--display);margin:30px 0 4px;letter-spacing:.02em}
+.sub{color:var(--muted);margin:0 0 12px;font-size:.95rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+select,input,button{font:inherit}
+select,input[type=date]{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);max-width:100%}
+button{cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 12px}
+button.primary{background:var(--deck);border-color:var(--deck);color:var(--onink)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--ball);outline-offset:1px}
+.pick{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pick label{font-weight:700}
+.capt{color:var(--muted);font-size:.9rem}
+.status{margin-top:10px;font-size:.9rem;color:var(--muted)}
+.status.err{color:#b3261e}
+/* matches */
+.matches{display:grid;gap:10px}
+.m{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--none);border-radius:8px;padding:12px 14px}
+.m.s-booked{border-left-color:var(--ok)} .m.s-ready{border-left-color:var(--ball)} .m.s-played{border-left-color:var(--muted)}
+.m .top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.m .vs{font-weight:700;font-size:1.05rem}
+.ha{font:600 .75rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-left:6px}
+.pill{font-size:.8rem;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.p-booked{background:var(--okbg);color:var(--ok)} .p-ready{background:var(--waitbg);color:var(--wait)}
+.p-none{background:var(--nonebg);color:var(--none)} .p-played{background:var(--nonebg);color:var(--muted)}
+.m .body{margin-top:8px;font-size:.95rem}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:4px 4px 4px 10px;font-variant-numeric:tabular-nums}
+.chip button{padding:3px 10px;font-size:.85rem}
+.note{color:var(--muted);font-size:.88rem;margin-top:6px}
+/* availability grid */
+.gridwrap{overflow-x:auto}
+table.av{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+table.av th,table.av td{border-bottom:1px solid var(--line);padding:4px;text-align:center}
+table.av th{font:700 .95rem var(--display);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
+.slot{width:100%;min-height:42px;font-size:.85rem;line-height:1.15;padding:5px 4px}
+.slot.on{background:var(--on);border-color:var(--on);color:var(--onink);font-weight:700}
+.slot.bk{background:var(--okbg);border-color:var(--ok);color:var(--ok);cursor:default}
+.slot[disabled]{opacity:.35;cursor:default}
+.custom{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+/* board */
+.board{width:100%;border-collapse:collapse;font-size:.88rem}
+.board td:last-child{white-space:nowrap}
+.board th,.board td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.board th{font:700 .9rem var(--display);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.board tr.mine td{background:color-mix(in srgb,var(--ball) 12%,transparent)}
+.summary{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 12px;font-size:.95rem}
+.summary b{font-variant-numeric:tabular-nums}
+.how{font-size:.95rem} .how li{margin:4px 0}
+@media (max-width:520px){h1{font-size:1.7rem}}
+</style>
+</head>
+<body>
+<header><div class="in">
+  <h1>DMPL Flight 2 · Match Scheduler</h1>
+  <p>Mark the times your team can play. When you and an opponent overlap, the home team books it.</p>
+</div></header>
+
+<div class="wrap">
+  <section class="card">
+    <div class="pick">
+      <label for="team">Your team</label>
+      <select id="team"><option value="">Choose your team…</option></select>
+      <span class="capt" id="capt"></span>
+    </div>
+    <div class="status" id="status">Connecting…</div>
+  </section>
+
+  <div id="teamArea" hidden>
+    <h2>Your matches</h2>
+    <p class="sub">Green = booked. Yellow = times that work for both teams, waiting on the home team to book.</p>
+    <div class="matches" id="matches"></div>
+
+    <h2>When can your team play?</h2>
+    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this.</p>
+    <div class="card gridwrap"><table class="av" id="grid"></table>
+      <div class="custom">
+        <label for="customDate"><b>Other time that works:</b></label>
+        <input type="date" id="customDate" aria-label="Date">
+        <select id="customTime" aria-label="Start time"></select>
+        <button id="addCustom" class="primary">Add time</button>
+      </div>
+      <div class="chips" id="customList"></div>
+    </div>
+  </div>
+
+  <h2>Whole flight</h2>
+  <div class="summary" id="summary"></div>
+  <div class="card gridwrap"><table class="board" id="board"></table></div>
+
+  <h2>How it works</h2>
+  <ol class="how card">
+    <li>Pick your team at the top (this device remembers it).</li>
+    <li>Tap the dates and times your team can play. Add any other time that works with “Other time.”</li>
+    <li>When both teams have a time in common, it shows on the match. The <b>home team</b> taps <b>Book</b>.</li>
+    <li>Booked matches show for everyone. Need to move one? Tap <b>Unbook</b> and pick again.</li>
+    <li>Still enter scores on Tenniscores as usual.</li>
+  </ol>
+</div>
+
+<script>
+const DB = "https://wednesday-tennis-tracker-default-rtdb.firebaseio.com/dmpl";
+const SEASON_END = "2027-03-14";        // last date shown in the grid
+const SLOTS = [ {dow:2,h:19,m:0,label:"Tue 7:00 PM"}, {dow:3,h:19,m:0,label:"Wed 7:00 PM"}, {dow:6,h:8,m:30,label:"Sat 8:30 AM"} ];
+
+const TEAMS = {
+  AJ:{n:"Arnaud/Jess",c:"Arnaud Mangin (C), Jess Berline (CC)"},
+  BD:{n:"Bryan/Dan",c:"Bryan Leith (C), Daniel de Varona (CC)"},
+  CHP:{n:"Curry/Heil/Peterson",c:"Ed Heil (C), Todd Peterson (CC), Scot Curry"},
+  DCP:{n:"David/Chris/Patrick",c:"David Pluszczyk (C), Chris Spangler (CC), Patrick Pettengill"},
+  DS:{n:"David/Scott",c:"David Barrett (C), Scott Seltzer (CC)"},
+  JK:{n:"Jim/Kevin",c:"Jim Johns (C), Kevin Meade (CC)"},
+  ND:{n:"Nick/Drew",c:"Drew Hayes (C), Nicholas Junttila (CC)"},
+  RRM:{n:"Ryan/Ryan/Michael",c:"Ryan Janz (C), Michael Lehman (CC), Ryan Meyers"},
+  WRS:{n:"Wade/Rick/Sandeep",c:"Wade Spencer (C), Rick Kelley (CC), Sandeep Badhwar"}
+};
+// [home, away] from the Tenniscores Flight 2 team schedules
+const PAIRS = [["AJ","CHP"],["AJ","BD"],["ND","AJ"],["DS","AJ"],["AJ","DCP"],["RRM","AJ"],["AJ","JK"],["WRS","AJ"],
+ ["BD","DS"],["DCP","BD"],["BD","RRM"],["JK","BD"],["BD","WRS"],["ND","BD"],["BD","CHP"],
+ ["CHP","ND"],["CHP","DS"],["DCP","CHP"],["CHP","RRM"],["JK","CHP"],["CHP","WRS"],
+ ["DCP","JK"],["WRS","DCP"],["ND","DCP"],["DCP","DS"],["RRM","DCP"],
+ ["DS","WRS"],["DS","ND"],["DS","RRM"],["JK","DS"],
+ ["JK","RRM"],["WRS","JK"],["ND","JK"],
+ ["RRM","ND"],["WRS","ND"],["RRM","WRS"]];
+const PLAYED = { "AJ-CHP":"Played 11/01 · Arnaud/Jess won 2–0" };
+const MATCHES = PAIRS.map(([h,a])=>({id:h+"-"+a,h,a}));
+
+let data = {avail:{}, matches:{}};
+let me = ""; try{ me = localStorage.getItem("dmplTeam")||""; }catch(e){}
+
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,"0");
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}`;
+const dateOf = k => { const [d,t]=k.split("T"); const [y,mo,da]=d.split("-").map(Number); const [h,mi]=t.split("-").map(Number); return new Date(y,mo-1,da,h,mi); };
+const fmt = k => dateOf(k).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+const future = k => dateOf(k) > new Date();
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// Standard slots from today through SEASON_END, grouped by week (Mon start)
+function weeks(){
+  const out=[]; const end=new Date(SEASON_END+"T23:59"); const now=new Date();
+  let mon=new Date(now.getFullYear(),now.getMonth(),now.getDate()); mon.setDate(mon.getDate()-((mon.getDay()+6)%7));
+  while(mon<=end){
+    const row={mon:new Date(mon),cells:[]};
+    for(const s of SLOTS){ const d=new Date(mon); d.setDate(d.getDate()+((s.dow+6)%7)); d.setHours(s.h,s.m,0,0); row.cells.push(d>end?null:d); }
+    out.push(row); mon.setDate(mon.getDate()+7);
+  }
+  return out;
+}
+const STANDARD = new Set(weeks().flatMap(w=>w.cells.filter(Boolean).map(keyOf)));
+
+const availOf = t => Object.keys((data.avail||{})[t]||{});
+const booked = () => data.matches||{};
+function bookedFor(t){ const r={}; for(const [id,b] of Object.entries(booked())){ const [h,a]=id.split("-"); if((h===t||a===t)&&b&&b.when) r[b.when]=id; } return r; }
+function overlap(m){
+  const A=new Set(availOf(m.h)); const bh=bookedFor(m.h), ba=bookedFor(m.a);
+  return availOf(m.a).filter(k=>A.has(k)&&future(k)&&!bh[k]&&!ba[k]).sort();
+}
+function state(m){
+  if(PLAYED[m.id]) return "played";
+  if(booked()[m.id]) return "booked";
+  return overlap(m).length ? "ready" : "none";
+}
+
+// ---------- Firebase REST ----------
+async function load(){
+  try{
+    const r = await fetch(DB+".json");
+    if(r.status===401||r.status===403){ setStatus("Saving is turned off: the Flight 2 database rules haven't been published in Firebase yet. Changes you make now won't be kept.",true); render(); return; }
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json()||{}; data={avail:j.avail||{},matches:j.matches||{}};
+    setStatus("Live. Changes save instantly and everyone sees them.");
+  }catch(e){ setStatus("Can't reach the schedule right now. Refresh in a minute.",true); }
+  render();
+}
+let blocked=false;
+function applyLocal(path,val){
+  const parts=path.split("/"); let o=data;
+  for(let i=0;i<parts.length-1;i++){ o[parts[i]]=o[parts[i]]||{}; o=o[parts[i]]; }
+  const last=parts[parts.length-1]; if(val==null) delete o[last]; else o[last]=val;
+}
+async function write(path,val){
+  applyLocal(path,val); render();
+  try{
+    const r = await fetch(`${DB}/${path}.json`,{method: val==null?"DELETE":"PUT", body: val==null?undefined:JSON.stringify(val)});
+    if(r.status===401||r.status===403){ blocked=true; setStatus("Saving is turned off: the Flight 2 database rules haven't been published in Firebase yet.",true); return; }
+    if(!r.ok) throw new Error(r.status);
+  }catch(e){ setStatus("That change didn't save. Check your connection and try again.",true); }
+  await load();
+}
+function live(){
+  try{
+    const es = new EventSource(DB+".json"); let t;
+    const kick=()=>{clearTimeout(t); t=setTimeout(load,300);};
+    es.addEventListener("put",kick); es.addEventListener("patch",kick);
+  }catch(e){}
+}
+function setStatus(msg,err){ const s=$("status"); s.textContent=msg; s.className="status"+(err?" err":""); }
+
+// ---------- actions ----------
+const toggle = (k,on) => write(`avail/${me}/${k}`, on?true:null);
+const book = (id,k) => write(`matches/${id}`, {when:k, by:me, at:new Date().toISOString()});
+const unbook = id => write(`matches/${id}`, null);
+
+// ---------- render ----------
+function render(){
+  const sel=$("team");
+  if(sel.options.length===1) for(const [k,t] of Object.entries(TEAMS)) sel.add(new Option(t.n,k));
+  sel.value=me; $("capt").textContent = me?TEAMS[me].c:"";
+  $("teamArea").hidden=!me;
+  if(me){ renderMatches(); renderGrid(); }
+  renderBoard();
+}
+
+function renderMatches(){
+  const mine = MATCHES.filter(m=>m.h===me||m.a===me);
+  const order={ready:0,none:1,booked:2,played:3};
+  mine.sort((x,y)=>order[state(x)]-order[state(y)]);
+  $("matches").innerHTML = mine.map(m=>{
+    const home=m.h===me, opp=home?m.a:m.h, st=state(m), b=booked()[m.id];
+    let pill, body="";
+    if(st==="played"){ pill=`<span class="pill p-played">Played</span>`; body=esc(PLAYED[m.id]); }
+    else if(st==="booked"){
+      pill=`<span class="pill p-booked">Booked</span>`;
+      body=`<b>${fmt(b.when)}</b>${home?" · you host":" · at "+esc(TEAMS[m.h].n)} <button data-unbook="${m.id}">Unbook</button>`;
+    } else {
+      const ov=overlap(m);
+      if(ov.length){
+        pill=`<span class="pill p-ready">${ov.length} time${ov.length>1?"s":""} work${ov.length>1?"":"s"}</span>`;
+        body = home ? `Both teams can play these. Book one:` : `Both teams can play these. Waiting on ${esc(TEAMS[m.h].n)} (home) to book.`;
+        body += `<div class="chips">`+ov.map(k=>`<span class="chip">${fmt(k)}${home?` <button class="primary" data-book="${m.id}|${k}">Book</button>`:""}</span>`).join("")+`</div>`;
+      } else {
+        pill=`<span class="pill p-none">No common time yet</span>`;
+        const theirs=availOf(opp).filter(future);
+        body = theirs.length ? `${esc(TEAMS[opp].n)} has marked ${theirs.length} time${theirs.length>1?"s":""}. None match yours yet.` : `${esc(TEAMS[opp].n)} hasn't marked any times yet.`;
+        const extra = theirs.filter(k=>!STANDARD.has(k) && !availOf(me).includes(k) && !bookedFor(me)[k]).sort();
+        if(extra.length) body += `<div class="note">They also offered:</div><div class="chips">`+extra.map(k=>`<span class="chip">${fmt(k)} <button data-add="${k}">I can do this</button></span>`).join("")+`</div>`;
+      }
+    }
+    return `<div class="m s-${st}"><div class="top"><span class="vs">vs ${esc(TEAMS[opp].n)}<span class="ha">${home?"Home":"Away"}</span></span>${pill}</div><div class="body">${body}</div></div>`;
+  }).join("");
+}
+
+function renderGrid(){
+  const mineAv=new Set(availOf(me)), bk=bookedFor(me), now=new Date();
+  let h=`<tr><th>Week of</th>${SLOTS.map(s=>`<th>${s.label}</th>`).join("")}</tr>`;
+  for(const w of weeks()){
+    h+=`<tr><td class="wk">${w.mon.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</td>`;
+    for(const d of w.cells){
+      if(!d){h+="<td></td>";continue;}
+      const k=keyOf(d), day=d.toLocaleDateString("en-US",{month:"numeric",day:"numeric"});
+      if(bk[k]){ const [hh,aa]=bk[k].split("-"); const opp=hh===me?aa:hh; h+=`<td><button class="slot bk" disabled title="Booked">${day}<br>vs ${esc(TEAMS[opp].n)}</button></td>`; continue; }
+      const on=mineAv.has(k);
+      h+=`<td><button class="slot${on?" on":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ Can play":"—"}</button></td>`;
+    }
+    h+="</tr>";
+  }
+  $("grid").innerHTML=h;
+  const custom=availOf(me).filter(k=>!STANDARD.has(k)&&future(k)).sort();
+  $("customList").innerHTML = custom.length ? `<span class="note">Your other times:</span>`+custom.map(k=>`<span class="chip">${fmt(k)} <button data-del="${k}" aria-label="Remove ${fmt(k)}">Remove</button></span>`).join("") : "";
+}
+
+function renderBoard(){
+  const c={booked:0,ready:0,none:0,played:0}; MATCHES.forEach(m=>c[state(m)]++);
+  $("summary").innerHTML=`<span><b>${c.played}</b> played</span><span><b>${c.booked}</b> booked</span><span><b>${c.ready}</b> ready to book</span><span><b>${c.none}</b> waiting on times</span><span>of <b>${MATCHES.length}</b> matches</span>`;
+  const label={played:"Played",booked:"Booked",ready:"Ready to book",none:"No common time"};
+  const order={booked:0,ready:1,none:2,played:3};
+  const rows=[...MATCHES].sort((x,y)=>order[state(x)]-order[state(y)] || ((booked()[x.id]||{}).when||"").localeCompare((booked()[y.id]||{}).when||""));
+  $("board").innerHTML=`<tr><th>Home</th><th>Away</th><th>Status</th><th>When</th></tr>`+rows.map(m=>{
+    const st=state(m), b=booked()[m.id];
+    return `<tr class="${m.h===me||m.a===me?"mine":""}"><td>${esc(TEAMS[m.h].n)}</td><td>${esc(TEAMS[m.a].n)}</td><td><span class="pill p-${st}">${label[st]}</span></td><td>${st==="booked"?dateOf(b.when).toLocaleString("en-US",{month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}):st==="played"?"11/01":""}</td></tr>`;
+  }).join("");
+}
+
+// ---------- events ----------
+$("team").addEventListener("change",e=>{ me=e.target.value; try{localStorage.setItem("dmplTeam",me);}catch(x){} render(); });
+document.addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b||b.disabled) return;
+  if(b.dataset.slot) toggle(b.dataset.slot, !b.classList.contains("on"));
+  else if(b.dataset.book){ const [id,k]=b.dataset.book.split("|"); book(id,k); }
+  else if(b.dataset.unbook) unbook(b.dataset.unbook);
+  else if(b.dataset.add) toggle(b.dataset.add,true);
+  else if(b.dataset.del) toggle(b.dataset.del,false);
+});
+// start times every half hour, 6:00 AM to 10:00 PM
+for(let m=6*60;m<=22*60;m+=30){ const d=new Date(2000,0,1,0,m); $("customTime").add(new Option(d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),`${pad(d.getHours())}-${pad(d.getMinutes())}`)); }
+$("customTime").value="19-00";
+$("addCustom").addEventListener("click",()=>{
+  const d=$("customDate").value; if(!me) return;
+  if(!d){ setStatus("Pick a date first.",true); return; }
+  const k=d+"T"+$("customTime").value; if(!future(k)){ setStatus("Pick a time in the future.",true); return; }
+  $("customDate").value=""; toggle(k,true);
+});
+
+render(); load(); live();
+</script>
+</body>
+</html>
