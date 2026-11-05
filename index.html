@@ -72,6 +72,17 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
 .oppbtn{width:100%;font-size:.75rem;font-weight:700;line-height:1.2;padding:5px 4px;background:var(--waitbg);color:var(--wait);border-color:var(--ball)}
 .oppbtn:hover{filter:brightness(.96)}
 .oppbtn.armed{background:var(--ok);border-color:var(--ok);color:#fff}
+.confirm{display:grid;gap:5px;padding:7px;border:2px solid var(--ok);border-radius:6px;background:var(--okbg);color:var(--ink);font-size:.8rem;line-height:1.25;text-align:center}
+.confirm .row{display:flex;gap:5px;justify-content:center;flex-wrap:wrap}
+.confirm button{padding:4px 10px;font-size:.8rem}
+.confirm.cancel{border-color:#b3261e;background:color-mix(in srgb,#b3261e 10%,var(--card))}
+button.danger{background:#b3261e;border-color:#b3261e;color:#fff}
+.slot.bk{cursor:pointer}
+.slot.bk:hover{filter:brightness(.97)}
+.notebox{display:grid;gap:8px;margin-top:12px}
+.notebox textarea{font:inherit;width:100%;min-height:58px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);resize:vertical}
+.notebox .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.theirnote{margin-top:6px;font-size:.9rem;padding:6px 10px;border-left:3px solid var(--ball);background:var(--waitbg);color:var(--ink);border-radius:0 6px 6px 0}
 .custom{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
 /* board */
 .board{width:100%;border-collapse:collapse;font-size:.88rem}
@@ -99,6 +110,11 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
       <span class="capt" id="capt"></span>
     </div>
     <div class="status" id="status">Connecting…</div>
+    <div class="notebox" id="noteBox" hidden>
+      <label for="note"><b>Note for other teams</b> <span class="capt">(optional, shows next to your team and in the emails)</span></label>
+      <textarea id="note" maxlength="300" placeholder="Example: We can also start at 6:00 or 6:30 on weekdays."></textarea>
+      <div class="row"><button id="saveNote" class="primary">Save note</button><span class="capt" id="noteSaved"></span></div>
+    </div>
   </section>
 
   <div id="teamArea" hidden>
@@ -107,7 +123,7 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
     <div class="matches" id="matches"></div>
 
     <h2>When can your team play?</h2>
-    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this. Team names under a slot are opponents you still need to play who can make that time. Tap a team name, then tap again to book that match. Both teams get an email.</p>
+    <p class="sub">Tap every slot your team can make. Preferred times are Tue 7:00 PM, Wed 7:00 PM and Sat 8:30 AM. Anyone on your team can update this. Team names under a slot are opponents you still need to play who can make that time. Tap a team name to book that match (you confirm first). Tap a booked slot to cancel it. Both teams get an email either way.</p>
     <div class="card gridwrap"><table class="av" id="grid"></table>
       <div class="custom">
         <label for="customDate"><b>Other time that works:</b></label>
@@ -127,8 +143,10 @@ table.av td.wk{text-align:left;font-weight:600;white-space:nowrap}
   <ol class="how card">
     <li>Pick your team at the top (this device remembers it).</li>
     <li>Tap the dates and times your team can play. Add any other time that works with “Other time.”</li>
-    <li>When both teams have a time in common, it shows on the match and <b>everyone on both teams gets an email</b>. <b>Either team</b> taps <b>Book</b>, and the home team reserves a court.</li>
-    <li>Once it's booked, both teams get a confirmation email, then a reminder the day before. Need to move a match? Tap <b>Unbook</b> and pick again.</li>
+    <li>When you mark times, the teams you still need to play get an email listing them. Each time in that email is a link that opens this page ready to book.</li>
+    <li>Team names under a slot are opponents who can play then. Tap one, confirm, and the match is booked. Both teams get an email, and the home team reserves a court.</li>
+    <li>Need to cancel or move a match? Tap the booked slot (or <b>Cancel match</b>), confirm, and both teams get an email. Then pick a new time.</li>
+    <li>Every Monday morning everyone gets a reminder with each team's open times.</li>
     <li>Still enter scores on Tenniscores as usual.</li>
   </ol>
 </div>
@@ -157,11 +175,12 @@ const PAIRS = [["AJ","CHP"],["AJ","BD"],["ND","AJ"],["DS","AJ"],["AJ","DCP"],["R
  ["DS","WRS"],["DS","ND"],["DS","RRM"],["JK","DS"],
  ["JK","RRM"],["WRS","JK"],["ND","JK"],
  ["RRM","ND"],["WRS","ND"],["RRM","WRS"]];
-const PLAYED = { "AJ-CHP":"Played 11/01 · Arnaud/Jess won 2–0" };
+const PLAYED = { "AJ-CHP":"Played 11/01 · Arnaud/Jess won 2–0", "JK-CHP":"Played 11/03" };
+const PLAYED_ON = { "AJ-CHP":"11/01", "JK-CHP":"11/03" };
 const MATCHES = PAIRS.map(([h,a])=>({id:h+"-"+a,h,a}));
 
-let data = {avail:{}, matches:{}};
-let armed = "";   // team button tapped once in the grid, waiting for the confirming tap
+let data = {avail:{}, matches:{}, notes:{}};
+let armed = "";   // "pick|<matchId>|<slot>" or "unbook|<matchId>" waiting for Yes/No
 let me = ""; try{ me = localStorage.getItem("dmplTeam")||""; }catch(e){}
 
 const $ = id => document.getElementById(id);
@@ -170,6 +189,7 @@ const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())
 const dateOf = k => { const [d,t]=k.split("T"); const [y,mo,da]=d.split("-").map(Number); const [h,mi]=t.split("-").map(Number); return new Date(y,mo-1,da,h,mi); };
 const fmt = k => dateOf(k).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
 const future = k => dateOf(k) > new Date();
+const noteOf = t => ((data.notes||{})[t]||"").trim();
 const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 // Standard slots from today through SEASON_END, grouped by week (Mon start)
@@ -205,7 +225,7 @@ async function load(){
     const r = await fetch(DB+".json");
     if(r.status===401||r.status===403){ setStatus("Saving is turned off: the Flight 2 database rules haven't been published in Firebase yet. Changes you make now won't be kept.",true); render(); return; }
     if(!r.ok) throw new Error(r.status);
-    const j = await r.json()||{}; data={avail:j.avail||{},matches:j.matches||{}};
+    const j = await r.json()||{}; data={avail:j.avail||{},matches:j.matches||{},notes:j.notes||{}};
     setStatus("Live. Changes save instantly and everyone sees them.");
   }catch(e){ setStatus("Can't reach the schedule right now. Refresh in a minute.",true); }
   render();
@@ -239,12 +259,23 @@ const toggle = (k,on) => write(`avail/${me}/${k}`, on?true:null);
 const book = (id,k) => write(`matches/${id}`, {when:k, by:me, at:new Date().toISOString()});
 const unbook = id => write(`matches/${id}`, null);
 
+// ---------- confirm prompts ----------
+function bookPrompt(id,k){
+  const [h,a]=id.split("-"), opp=h===me?a:h;
+  return `<div class="confirm"><span>Book vs <b>${esc(TEAMS[opp].n)}</b><br>${fmt(k)}?</span><div class="row"><button class="primary" data-yes="pick|${id}|${k}">Yes, book</button><button data-no>No</button></div></div>`;
+}
+function cancelPrompt(id){
+  const [h,a]=id.split("-"), opp=h===me?a:h, b=booked()[id];
+  return `<div class="confirm cancel"><span>Cancel match vs <b>${esc(TEAMS[opp].n)}</b><br>${fmt(b.when)}?</span><div class="row"><button class="danger" data-yes="unbook|${id}">Yes, cancel</button><button data-no>Keep it</button></div></div>`;
+}
+
 // ---------- render ----------
 function render(){
   const sel=$("team");
   if(sel.options.length===1) for(const [k,t] of Object.entries(TEAMS)) sel.add(new Option(t.n,k));
   sel.value=me; $("capt").textContent = me?TEAMS[me].c:"";
-  $("teamArea").hidden=!me;
+  $("teamArea").hidden=!me; $("noteBox").hidden=!me;
+  if(me && document.activeElement!==$("note")) $("note").value=noteOf(me);
   if(me){ renderMatches(); renderGrid(); }
   renderBoard();
 }
@@ -259,13 +290,14 @@ function renderMatches(){
     if(st==="played"){ pill=`<span class="pill p-played">Played</span>`; body=PLAYED[m.id]?esc(PLAYED[m.id]):`Played ${fmt(b.when)}. Enter the score on Tenniscores.`; }
     else if(st==="booked"){
       pill=`<span class="pill p-booked">Booked</span>`;
-      body=`<b>${fmt(b.when)}</b>${home?" · you host":" · at "+esc(TEAMS[m.h].n)} <button data-unbook="${m.id}">Unbook</button>`;
+      body = armed==="unbook|"+m.id ? cancelPrompt(m.id)
+        : `<b>${fmt(b.when)}</b>${home?" · you host":" · at "+esc(TEAMS[m.h].n)} <button data-ask="unbook|${m.id}">Cancel match</button>`;
     } else {
       const ov=overlap(m);
       if(ov.length){
         pill=`<span class="pill p-ready">${ov.length} time${ov.length>1?"s":""} work${ov.length>1?"":"s"}</span>`;
         body = `Both teams can play these. Either team can book one:`;
-        body += `<div class="chips">`+ov.map(k=>`<span class="chip">${fmt(k)} <button class="primary" data-book="${m.id}|${k}">Book</button></span>`).join("")+`</div>`;
+        body += `<div class="chips">`+ov.map(k=> armed===`pick|${m.id}|${k}` ? bookPrompt(m.id,k) : `<span class="chip">${fmt(k)} <button class="primary" data-ask="pick|${m.id}|${k}">Book</button></span>`).join("")+`</div>`;
       } else {
         pill=`<span class="pill p-none">No common time yet</span>`;
         const theirs=availOf(opp).filter(future);
@@ -274,6 +306,7 @@ function renderMatches(){
         if(extra.length) body += `<div class="note">They also offered:</div><div class="chips">`+extra.map(k=>`<span class="chip">${fmt(k)} <button data-add="${k}">I can do this</button></span>`).join("")+`</div>`;
       }
     }
+    if(st!=="played" && noteOf(opp)) body += `<div class="theirnote"><b>${esc(TEAMS[opp].n)} note:</b> ${esc(noteOf(opp))}</div>`;
     return `<div class="m s-${st}"><div class="top"><span class="vs">vs ${esc(TEAMS[opp].n)}<span class="ha">${home?"Home":"Away"}</span></span>${pill}</div><div class="body">${body}</div></div>`;
   }).join("");
 }
@@ -287,16 +320,22 @@ function renderGrid(){
     for(const d of w.cells){
       if(!d){h+="<td></td>";continue;}
       const k=keyOf(d), day=d.toLocaleDateString("en-US",{month:"numeric",day:"numeric"});
-      if(bk[k]){ const [hh,aa]=bk[k].split("-"); const opp=hh===me?aa:hh; h+=`<td><button class="slot bk" disabled title="Booked">${day}<br>vs ${esc(TEAMS[opp].n)}</button></td>`; continue; }
+      if(bk[k]){
+        const id=bk[k], [hh,aa]=id.split("-"), opp=hh===me?aa:hh;
+        h+= armed==="unbook|"+id && d>=now ? `<td id="cell-${k}">${cancelPrompt(id)}</td>`
+          : `<td id="cell-${k}"><button class="slot bk" ${d<now?"disabled":`data-ask="unbook|${id}"`} title="Tap to cancel this match">${day}<br>vs ${esc(TEAMS[opp].n)}</button></td>`;
+        continue;
+      }
       const on=mineAv.has(k);
       // opponents we still need to play who marked this slot (and aren't booked then)
       const opps=d<now?[]:todo.filter(o=>availOf(o).includes(k)&&!bookedFor(o)[k]);
       const hit=on&&opps.length;
       const who=opps.map(o=>{
-        const m=MATCHES.find(x=>(x.h===me&&x.a===o)||(x.a===me&&x.h===o)), key=m.id+"|"+k, armedNow=armed===key;
-        return `<button class="oppbtn${armedNow?" armed":""}" data-pick="${key}" title="Book this match">${armedNow?"Tap again to book<br>":""}${esc(TEAMS[o].n).replace(/\//g,"/<wbr>")}</button>`;
+        const m=MATCHES.find(x=>(x.h===me&&x.a===o)||(x.a===me&&x.h===o)), key=`pick|${m.id}|${k}`;
+        if(armed===key) return bookPrompt(m.id,k);
+        return `<button class="oppbtn" data-ask="${key}" title="${esc(noteOf(o)||"Book this match")}">${esc(TEAMS[o].n).replace(/\//g,"/<wbr>")}</button>`;
       }).join("");
-      h+=`<td><div class="cell${hit?" hit":""}"><button class="slot${on?" on":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ We can play":"—"}</button>${who}</div></td>`;
+      h+=`<td id="cell-${k}"><div class="cell${hit?" hit":""}"><button class="slot${on?" on":""}" data-slot="${k}" aria-pressed="${on}" ${d<now?"disabled":""}>${day}<br>${on?"✓ We can play":"—"}</button>${who}</div></td>`;
     }
     h+="</tr>";
   }
@@ -313,7 +352,7 @@ function renderBoard(){
   const rows=[...MATCHES].sort((x,y)=>order[state(x)]-order[state(y)] || ((booked()[x.id]||{}).when||"").localeCompare((booked()[y.id]||{}).when||""));
   $("board").innerHTML=`<tr><th>Home</th><th>Away</th><th>Status</th><th>When</th></tr>`+rows.map(m=>{
     const st=state(m), b=booked()[m.id];
-    return `<tr class="${m.h===me||m.a===me?"mine":""}"><td>${esc(TEAMS[m.h].n)}</td><td>${esc(TEAMS[m.a].n)}</td><td><span class="pill p-${st}">${label[st]}</span></td><td>${st==="booked"?dateOf(b.when).toLocaleString("en-US",{month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}):st==="played"?(b?dateOf(b.when).toLocaleDateString("en-US",{month:"numeric",day:"numeric"}):"11/01"):""}</td></tr>`;
+    return `<tr class="${m.h===me||m.a===me?"mine":""}"><td>${esc(TEAMS[m.h].n)}</td><td>${esc(TEAMS[m.a].n)}</td><td><span class="pill p-${st}">${label[st]}</span></td><td>${st==="booked"?dateOf(b.when).toLocaleString("en-US",{month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}):st==="played"?(b?dateOf(b.when).toLocaleDateString("en-US",{month:"numeric",day:"numeric"}):PLAYED_ON[m.id]||""):""}</td></tr>`;
   }).join("");
 }
 
@@ -322,15 +361,21 @@ $("team").addEventListener("change",e=>{ armed=""; me=e.target.value; try{localS
 document.addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b||b.disabled) return;
   if(b.dataset.slot) toggle(b.dataset.slot, !b.classList.contains("on"));
-  else if(b.dataset.book){ const [id,k]=b.dataset.book.split("|"); book(id,k); }
-  else if(b.dataset.pick){ if(armed===b.dataset.pick){ armed=""; const [id,k]=b.dataset.pick.split("|"); book(id,k); } else { armed=b.dataset.pick; render(); } }
-  else if(b.dataset.unbook) unbook(b.dataset.unbook);
+  else if(b.dataset.ask){ armed=b.dataset.ask; render(); }
+  else if("no" in b.dataset){ armed=""; render(); }
+  else if(b.dataset.yes){ const p=b.dataset.yes.split("|"); armed="";
+    if(p[0]==="pick") book(p[1],p[2]); else if(p[0]==="unbook") unbook(p[1]); }
   else if(b.dataset.add) toggle(b.dataset.add,true);
   else if(b.dataset.del) toggle(b.dataset.del,false);
 });
 // start times every half hour, 6:00 AM to 10:00 PM
 for(let m=6*60;m<=22*60;m+=30){ const d=new Date(2000,0,1,0,m); $("customTime").add(new Option(d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),`${pad(d.getHours())}-${pad(d.getMinutes())}`)); }
 $("customTime").value="19-00";
+$("saveNote").addEventListener("click",async()=>{
+  if(!me) return; const v=$("note").value.trim().slice(0,300);
+  await write(`notes/${me}`, v||null); $("noteSaved").textContent = v?"Saved":"Note removed";
+  setTimeout(()=>{$("noteSaved").textContent="";},3000);
+});
 $("addCustom").addEventListener("click",()=>{
   const d=$("customDate").value; if(!me) return;
   if(!d){ setStatus("Pick a date first.",true); return; }
@@ -338,7 +383,17 @@ $("addCustom").addEventListener("click",()=>{
   $("customDate").value=""; toggle(k,true);
 });
 
-render(); load(); live();
+function fromLink(){
+  const h=(location.hash||"").slice(1).split("-");
+  if((h[0]==="book"||h[0]==="team") && TEAMS[h[1]]){
+    me=h[1]; try{localStorage.setItem("dmplTeam",me);}catch(x){}
+    if(h[0]==="book" && h.length>=6){ const id=h[2]+"-"+h[3], k=h.slice(4).join("-"); armed=`pick|${id}|${k}`; return k; }
+  }
+  return null;
+}
+let jumpTo=fromLink();
+render(); load().then(()=>{ if(jumpTo){ const el=$("cell-"+jumpTo); if(el) el.scrollIntoView({block:"center"}); jumpTo=null; } }); live();
+window.addEventListener("hashchange",()=>{ jumpTo=fromLink(); render(); const el=jumpTo&&$("cell-"+jumpTo); if(el) el.scrollIntoView({block:"center"}); });
 </script>
 </body>
 </html>
